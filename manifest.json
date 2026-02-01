@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "Indeed Resume Auto Downloader",
+  "version": "1.3",
+  "description": "Start/Stop automated resume downloading from Indeed employer dashboard",
+  "permissions": ["activeTab", "scripting"],
+  "host_permissions": [
+    "https://employers.indeed.com/*"
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  }
+}
