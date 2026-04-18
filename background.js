@@ -1,4 +1,5 @@
 const STATE_KEY = "indeedAutoState";
+const PROGRESS_KEY = "indeedAutoProgress";
 
 async function setRunningState(running) {
   await chrome.storage.local.set({ [STATE_KEY]: running });
@@ -41,6 +42,13 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (message?.type === "SET_RUNNING") {
       const running = Boolean(message.running);
       await setRunningState(running);
+      if (running) {
+        await chrome.storage.local.set({
+          [PROGRESS_KEY]: { index: 0, downloadedIds: [] }
+        });
+      } else {
+        await chrome.storage.local.remove(PROGRESS_KEY);
+      }
       await updateKeepAwake(running);
       sendResponse({ ok: true, running });
       return;
@@ -52,4 +60,21 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   });
 
   return true;
+});
+
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (changeInfo.status !== "complete") return;
+  if (!tab.url?.startsWith("https://employers.indeed.com")) return;
+  (async () => {
+    const running = await getRunningState();
+    if (!running) return;
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId },
+        files: ["content.js"]
+      });
+    } catch (_) {
+      /* tab may not allow injection */
+    }
+  })();
 });

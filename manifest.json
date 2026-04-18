@@ -9,7 +9,7 @@
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   },
-  "permissions": ["activeTab", "scripting", "power", "storage"],
+  "permissions": ["activeTab", "scripting", "power", "storage", "tabs"],
   "host_permissions": [
     "https://employers.indeed.com/*"
   ],
