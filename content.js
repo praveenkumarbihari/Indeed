@@ -7,6 +7,41 @@
   console.log("🚀 Indeed auto downloader started");
 
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+  let wakeLock = null;
+
+  async function acquireWakeLock() {
+    if (!("wakeLock" in navigator)) return;
+    try {
+      wakeLock = await navigator.wakeLock.request("screen");
+      console.log("🔋 Screen wake lock acquired");
+    } catch (err) {
+      console.warn("⚠️ Could not acquire screen wake lock", err);
+    }
+  }
+
+  async function releaseWakeLock() {
+    try {
+      if (wakeLock) {
+        await wakeLock.release();
+        wakeLock = null;
+        console.log("🔋 Screen wake lock released");
+      }
+    } catch (err) {
+      console.warn("⚠️ Could not release screen wake lock", err);
+    }
+  }
+
+  document.addEventListener("visibilitychange", async () => {
+    if (
+      document.visibilityState === "visible" &&
+      window.__INDEED_AUTO_RUNNING__ &&
+      !wakeLock
+    ) {
+      await acquireWakeLock();
+    }
+  });
+
+  await acquireWakeLock();
 
   // Detect candidates (left panel)
   const candidates = Array.from(
@@ -20,6 +55,7 @@
     // STOP immediately if user clicks Stop
     if (!window.__INDEED_AUTO_RUNNING__) {
       console.log("⏹ Stopped by user");
+      await releaseWakeLock();
       window.__INDEED_AUTO_ACTIVE__ = false;
       return;
     }
@@ -72,6 +108,7 @@
   }
 
   console.log("🎉 All candidates processed");
+  await releaseWakeLock();
   window.__INDEED_AUTO_ACTIVE__ = false;
 
 })();
