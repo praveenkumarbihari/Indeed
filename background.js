@@ -74,7 +74,12 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (changeInfo.status !== "complete") return;
-  if (!tab.url?.startsWith("https://employers.indeed.com")) return;
+  if (
+    !tab.url?.startsWith("https://employers.indeed.com") &&
+    !tab.url?.startsWith("https://resumes.indeed.com")
+  ) {
+    return;
+  }
   (async () => {
     const running = await getRunningState();
     if (!running) return;

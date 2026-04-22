@@ -139,6 +139,109 @@
     return false;
   }
 
+  function pageLooksLikeSmartSourcing() {
+    if (location.hostname !== "resumes.indeed.com") return false;
+    const text = (document.body?.innerText || "").toLowerCase();
+    return (
+      text.includes("smart sourcing") ||
+      text.includes("find candidates") ||
+      text.includes("discover and engage")
+    );
+  }
+
+  function pageLooksLikeJobsList() {
+    if (location.hostname !== "employers.indeed.com") return false;
+    const path = location.pathname || "";
+    if (path.includes("/jobs")) return true;
+    const text = (document.body?.innerText || "").toLowerCase();
+    return text.includes("all jobs") && text.includes("job title");
+  }
+
+  function pageLooksLikeCandidatesList() {
+    if (location.hostname !== "employers.indeed.com") return false;
+    const path = location.pathname || "";
+    if (path.includes("/candidates")) return true;
+    return Boolean(document.querySelector('[data-testid="candidate-card"]'));
+  }
+
+  function clickFirstJobPosting() {
+    const link = document.querySelector('a[href*="/jobs/"], a[href*="/job/"]');
+    if (link) {
+      link.click();
+      return true;
+    }
+    const maybe = Array.from(document.querySelectorAll("a")).find((a) =>
+      /\/jobs\//.test(a.getAttribute("href") || "")
+    );
+    if (maybe) {
+      maybe.click();
+      return true;
+    }
+    return false;
+  }
+
+  function clickNewApplicationsTab() {
+    const candidates = Array.from(
+      document.querySelectorAll("a, button, [role='tab']")
+    );
+    const el =
+      candidates.find((x) =>
+        (x.textContent || "").toLowerCase().includes("new applications")
+      ) ||
+      candidates.find(
+        (x) => (x.textContent || "").trim().toLowerCase() === "new"
+      );
+    if (el) {
+      el.click();
+      return true;
+    }
+    return false;
+  }
+
+  function clickFirstCandidateInList() {
+    const cards = queryCandidateCards();
+    if (!cards.length) return false;
+    cards[0].scrollIntoView({ behavior: "smooth", block: "center" });
+    cards[0].click();
+    return true;
+  }
+
+  async function recoverFromCloudflareRedirect() {
+    // 1) If we landed on resumes.indeed.com, click Indeed logo to return to employer area.
+    if (pageLooksLikeSmartSourcing()) {
+      console.log("Cloudflare redirect detected (Smart Sourcing). Recovering...");
+      if (clickIndeedHeaderLogo()) {
+        await sleep(10_000);
+      } else {
+        // Try any top-left "Indeed" link
+        const a = document.querySelector('a[aria-label*="Indeed" i], a[href*="indeed.com"]');
+        a?.click?.();
+        await sleep(10_000);
+      }
+    }
+
+    // 2) If we're on jobs list, open a job.
+    if (pageLooksLikeJobsList()) {
+      console.log("On jobs list. Opening first job posting...");
+      if (clickFirstJobPosting()) {
+        await sleep(10_000);
+      }
+    }
+
+    // 3) On job page, click New applications.
+    console.log("Selecting New applications tab (if present)...");
+    if (clickNewApplicationsTab()) {
+      await sleep(6_000);
+    }
+
+    // 4) Click first candidate so the usual viewer page loads.
+    if (pageLooksLikeCandidatesList()) {
+      console.log("Candidates list detected. Opening first candidate...");
+      clickFirstCandidateInList();
+      await sleep(12_000);
+    }
+  }
+
   function queryCandidateCards() {
     let cards = Array.from(
       document.querySelectorAll('[data-testid="candidate-card"]')
@@ -197,6 +300,12 @@
         console.log("Stopped by user");
         await releaseWakeLock();
         return;
+      }
+
+      // Cloudflare / unexpected redirect recovery (best-effort).
+      // This runs before pagination logic so we can re-enter the normal flow.
+      if (!pageLooksLikeCandidatesList()) {
+        await recoverFromCloudflareRedirect();
       }
 
     if (needsPaginationRecovery()) {
