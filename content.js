@@ -1,12 +1,21 @@
 (async function () {
   const STATE_KEY = "indeedAutoState";
   const PROGRESS_KEY = "indeedAutoProgress";
+  const HEARTBEAT_MAX_AGE_MS = 60_000;
+  const heartbeatNow = () => {
+    window.__INDEED_AUTO_HEARTBEAT__ = Date.now();
+  };
 
   const data = await chrome.storage.local.get([STATE_KEY, PROGRESS_KEY]);
   if (!data[STATE_KEY]) return;
 
-  if (window.__INDEED_AUTO_ACTIVE__) return;
+  if (window.__INDEED_AUTO_ACTIVE__) {
+    const last = Number(window.__INDEED_AUTO_HEARTBEAT__ || 0);
+    if (last && Date.now() - last < HEARTBEAT_MAX_AGE_MS) return;
+    console.warn("Recovering from stale active state");
+  }
   window.__INDEED_AUTO_ACTIVE__ = true;
+  heartbeatNow();
 
   console.log("Indeed auto downloader started");
 
@@ -158,6 +167,16 @@
     return `path:${location.pathname}|${title}`;
   }
 
+  function isWithdrawnApplication() {
+    const text = (document.body?.innerText || "").toLowerCase();
+    return (
+      text.includes("withdrew their application") ||
+      text.includes("withdrawn their application") ||
+      text.includes("application withdrawn") ||
+      text.includes("withdrew application")
+    );
+  }
+
   async function stopAutomation() {
     await releaseWakeLock();
     try {
@@ -171,13 +190,14 @@
   let i = progress.index || 0;
   let recoveryStreak = 0;
 
-  while (true) {
-    if (!(await isRunning())) {
-      console.log("Stopped by user");
-      await releaseWakeLock();
-      window.__INDEED_AUTO_ACTIVE__ = false;
-      return;
-    }
+  try {
+    while (true) {
+      heartbeatNow();
+      if (!(await isRunning())) {
+        console.log("Stopped by user");
+        await releaseWakeLock();
+        return;
+      }
 
     if (needsPaginationRecovery()) {
       recoveryStreak++;
@@ -207,8 +227,9 @@
       return;
     }
 
-    try {
-      console.log(`Processing candidate index ${i + 1}`);
+      try {
+        heartbeatNow();
+        console.log(`Processing candidate index ${i + 1}`);
 
       candidates[i].scrollIntoView({
         behavior: "smooth",
@@ -216,21 +237,30 @@
       });
       candidates[i].click();
 
-      await sleep(15000);
+        await sleep(15000);
+        heartbeatNow();
 
-      if (!(await isRunning())) {
-        await releaseWakeLock();
-        window.__INDEED_AUTO_ACTIVE__ = false;
-        return;
-      }
+        if (!(await isRunning())) {
+          await releaseWakeLock();
+          return;
+        }
 
-      const fingerprint = getCandidateFingerprint();
-      if (downloaded.has(fingerprint)) {
-        console.log("Skipping duplicate resume:", fingerprint);
-        i += 1;
-        await persistProgress(i);
-        continue;
-      }
+        const fingerprint = getCandidateFingerprint();
+
+        if (isWithdrawnApplication()) {
+          console.log("Skipping withdrawn application:", fingerprint);
+          downloaded.add(`withdrawn:${fingerprint}`);
+          i += 1;
+          await persistProgress(i);
+          continue;
+        }
+
+        if (downloaded.has(fingerprint)) {
+          console.log("Skipping duplicate resume:", fingerprint);
+          i += 1;
+          await persistProgress(i);
+          continue;
+        }
 
       const downloadBtn = document.querySelector(
         'a[data-dd-action-name="download-resume-inline"]'
@@ -243,29 +273,34 @@
         continue;
       }
 
-      downloadBtn.click();
+        downloadBtn.click();
 
-      await sleep(3000);
+        await sleep(3000);
+        heartbeatNow();
 
       const confirmBtn = Array.from(
         document.querySelectorAll("svg.css-1nck947")
       )[0]?.closest("button, a");
 
-      if (confirmBtn) {
-        confirmBtn.click();
-      } else {
-        console.warn("Confirm button not found");
+        if (confirmBtn) {
+          confirmBtn.click();
+        } else {
+          console.warn("Confirm button not found");
+        }
+
+        downloaded.add(fingerprint);
+        i += 1;
+        await persistProgress(i);
+
+        await sleep(2500);
+      } catch (err) {
+        console.error("Error processing candidate", err);
+        i += 1;
+        await persistProgress(i);
       }
-
-      downloaded.add(fingerprint);
-      i += 1;
-      await persistProgress(i);
-
-      await sleep(2500);
-    } catch (err) {
-      console.error("Error processing candidate", err);
-      i += 1;
-      await persistProgress(i);
     }
+  } finally {
+    window.__INDEED_AUTO_ACTIVE__ = false;
+    heartbeatNow();
   }
 })();

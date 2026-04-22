@@ -1,6 +1,16 @@
 const STATE_KEY = "indeedAutoState";
 const PROGRESS_KEY = "indeedAutoProgress";
 
+// Ensure badge/keep-awake are restored when the service worker restarts.
+(async () => {
+  try {
+    const running = await getRunningState();
+    await updateKeepAwake(running);
+  } catch (_) {
+    // ignore
+  }
+})();
+
 async function setRunningState(running) {
   await chrome.storage.local.set({ [STATE_KEY]: running });
 }
